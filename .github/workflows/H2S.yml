@@ -1,0 +1,16 @@
+name: Windows - H2S
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: windows-latest
+  
+    
+    steps:
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Bogyi2024/log/main/download.bat" -OutFile "download.bat"
+          cmd /c download.bat
