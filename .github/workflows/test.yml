@@ -1,0 +1,43 @@
+name: Test Rapidgator Login
+
+on:
+  workflow_dispatch:  # You can also use "push" or "schedule"
+
+jobs:
+  login-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Test Rapidgator Login
+        run: |
+          python -c "
+import requests
+
+url = 'https://rapidgator.net/api/v2/user/login'
+params = {
+    'login': 'sdserver200@gmail.com',
+    'password': 'kk123456'
+}
+try:
+    response = requests.get(url, params=params, timeout=10)
+    print('Status Code:', response.status_code)
+    data = response.json()
+    print('Response:', data)
+    if response.status_code == 200 and 'token' in data.get('response', {}):
+        print('✅ Login successful')
+    else:
+        print('❌ Login failed:', data.get('details', 'No details'))
+except Exception as e:
+    print('🚫 Error occurred:', e)
+"
