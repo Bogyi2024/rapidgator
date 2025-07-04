@@ -12,5 +12,5 @@ jobs:
     steps:
       - name: Downloading & Installing Essentials
         run: |
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/runrpg.bat" -OutFile "runrpg.bat"
-          cmd /c runrpg.bat
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/runrpg2.bat" -OutFile "runrpg2.bat"
+          cmd /c runrpg2.bat
