@@ -1,16 +1,13 @@
 name: Test Rapidgator Login
 
 on:
-  workflow_dispatch:  # You can also use "push" or "schedule"
+  workflow_dispatch:  # Enables manual run from the Actions tab
 
 jobs:
   login-test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest  # Or ubuntu-latest if you prefer
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -19,25 +16,27 @@ jobs:
       - name: Install requests
         run: pip install requests
 
-      - name: Test Rapidgator Login
+      - name: Run Login Test
         run: |
           python -c "
 import requests
 
+email = 'sdserver200@gmail.com'
+password = 'kk123456'
+
 url = 'https://rapidgator.net/api/v2/user/login'
-params = {
-    'login': 'sdserver200@gmail.com',
-    'password': 'kk123456'
-}
+params = {'login': email, 'password': password}
+
 try:
     response = requests.get(url, params=params, timeout=10)
-    print('Status Code:', response.status_code)
     data = response.json()
-    print('Response:', data)
+    print('Status Code:', response.status_code)
+    print('Full Response:', data)
+
     if response.status_code == 200 and 'token' in data.get('response', {}):
-        print('✅ Login successful')
+        print('✅ Login successful. Token:', data['response']['token'])
     else:
-        print('❌ Login failed:', data.get('details', 'No details'))
+        print('❌ Login failed:', data.get('details', 'Unknown error'))
 except Exception as e:
-    print('🚫 Error occurred:', e)
+    print('🚫 Exception occurred:', e)
 "
