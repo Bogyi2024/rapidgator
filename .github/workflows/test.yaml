@@ -1,36 +1,16 @@
-name: Test Rapidgator Login
+name: Windows - Rapidgator5
 
 on:
   workflow_dispatch:
 
 jobs:
-  login-test:
-    runs-on: ubuntu-latest
-
+  build:
+    name: Start Building...
+    runs-on: windows-latest
+  
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-
-      - name: Install requests
-        run: pip install requests
-
-      - name: Run Login Test
+      - name: Downloading & Installing Essentials
         run: |
-          python -c "
-import requests
-
-email = 'sdserver200@gmail.com'
-password = 'kk123456'
-
-url = 'https://rapidgator.net/api/v2/user/login'
-params = {'login': email, 'password': password}
-
-response = requests.get(url, params=params, timeout=10)
-data = response.json()
-print('Status Code:', response.status_code)
-print('Response:', data)
-"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/runrpg4.bat" -OutFile "runrpg4.bat"
+          cmd /c runrpg4.bat
