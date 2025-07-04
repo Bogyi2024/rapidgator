@@ -1,4 +1,4 @@
-name: Linux - Rapidgator Shell Script
+name: Rapidgator - Linux
 
 on:
   workflow_dispatch:
