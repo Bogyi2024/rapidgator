@@ -5,7 +5,7 @@ on:
 
 jobs:
   test-login:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Set up Python
