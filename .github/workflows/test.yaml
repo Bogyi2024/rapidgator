@@ -1,17 +1,19 @@
 name: Test Rapidgator Login
 
 on:
-  workflow_dispatch:  # Enables manual run from the Actions tab
+  workflow_dispatch:
 
 jobs:
   login-test:
-    runs-on: windows-latest  # Or ubuntu-latest if you prefer
+    runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: 3.11
 
       - name: Install requests
         run: pip install requests
@@ -27,16 +29,8 @@ password = 'kk123456'
 url = 'https://rapidgator.net/api/v2/user/login'
 params = {'login': email, 'password': password}
 
-try:
-    response = requests.get(url, params=params, timeout=10)
-    data = response.json()
-    print('Status Code:', response.status_code)
-    print('Full Response:', data)
-
-    if response.status_code == 200 and 'token' in data.get('response', {}):
-        print('✅ Login successful. Token:', data['response']['token'])
-    else:
-        print('❌ Login failed:', data.get('details', 'Unknown error'))
-except Exception as e:
-    print('🚫 Exception occurred:', e)
+response = requests.get(url, params=params, timeout=10)
+data = response.json()
+print('Status Code:', response.status_code)
+print('Response:', data)
 "
