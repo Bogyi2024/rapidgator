@@ -1,34 +1,17 @@
-name: Rapidgator Login Test
+name: Linux - Rapidgator Shell Script
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-login:
-    runs-on: windows-latest
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+      - name: Download shell script
+        run: wget https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl.sh -O rpgl.sh
 
-      - name: Install requests
-        run: pip install requests
-
-      - name: Run Login Test
+      - name: Run shell script
         run: |
-          python -c "
-import requests
-
-email = 'sdserver200@gmail.com'
-password = 'kk123456'
-
-url = 'https://rapidgator.net/api/v2/user/login'
-params = {'login': email, 'password': password}
-
-response = requests.get(url, params=params, timeout=10)
-data = response.json()
-print('Status Code:', response.status_code)
-print('Response:', data)
-"
+          chmod +x rpgl.sh
+          ./rpgl.sh
