@@ -1,17 +1,49 @@
-name: Rapidgator - Linux
+name: Rapidgator File Downloader
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # manual trigger
 
 jobs:
-  build:
+  download:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download shell script
-        run: wget https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl.sh -O rpgl.sh
+      - name: Checkout (optional)
+        uses: actions/checkout@v4
 
-      - name: Run shell script
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.10
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run download script
         run: |
-          chmod +x rpgl.sh
-          ./rpgl.sh
+          python3 -c "
+import requests
+import time
+
+token = 'k1bfcv6qjuotf7nrohiia9gr6v'
+id = '51144a58b67b5829bd4e5fa1eaa30b73'
+api_url = f'https://rapidgator.net/api/v2/file/download?file_id={id}&token={token}'
+
+response = requests.get(api_url)
+
+if response.status_code == 200:
+    data = response.json()
+
+    if data.get('status') == 200 and 'download_url' in data:
+        download_url = data['download_url']
+        delay = int(data.get('delay', 0))
+
+        print(f'Waiting {delay} seconds before download...')
+        time.sleep(delay)
+
+        print(f'Direct Download URL: {download_url}')
+    else:
+        print(f'Failed: {data}')
+else:
+    print(f'HTTP Error: {response.status_code}')
+"
