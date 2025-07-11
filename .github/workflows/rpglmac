@@ -1,0 +1,16 @@
+name: macOS - Rapidgator1
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: macos-latest
+
+    steps:
+      - name: Downloading & Installing Essentials
+        run: |
+          curl -o rpgl.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl.sh"
+          chmod +x rpgl.sh
+          ./rpgl.sh
