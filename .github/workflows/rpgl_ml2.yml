@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Downloading & Installing Essentials
         run: |
-          wget -O rpgl_ml2.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml.sh"
+          wget -O rpgl_ml2.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml2.sh"
           chmod +x rpgl_ml2.sh
           ./rpgl_ml2.sh
