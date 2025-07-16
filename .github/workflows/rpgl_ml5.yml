@@ -1,0 +1,16 @@
+name: Ubuntu - Rapidgator_Multiline - line 5
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Downloading & Installing Essentials
+        run: |
+          wget -O rpgl_ml5.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml.sh"
+          chmod +x rpgl_ml5.sh
+          ./rpgl_ml5.sh
