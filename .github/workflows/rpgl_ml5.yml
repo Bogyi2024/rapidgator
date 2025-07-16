@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Downloading & Installing Essentials
         run: |
-          wget -O rpgl_ml5.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml.sh"
+          wget -O rpgl_ml5.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml5.sh"
           chmod +x rpgl_ml5.sh
           ./rpgl_ml5.sh
