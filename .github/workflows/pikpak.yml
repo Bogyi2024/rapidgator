@@ -1,0 +1,16 @@
+name: Ubuntu - Pikpak
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Start Building...
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Downloading & Installing Essentials
+        run: |
+          wget -O pikpak.sh "https://github.com/Bogyi2024/log/raw/refs/heads/main/pikpak/pikpak.sh"
+          chmod +x pikpak.sh
+          ./pikpak.sh
