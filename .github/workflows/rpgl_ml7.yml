@@ -13,4 +13,4 @@ jobs:
         run: |
           wget -O rpgl_ml7.sh "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml7.sh"
           chmod +x rpgl_ml7.sh
-          ./rpgl_ml6.sh
+          ./rpgl_ml7.sh
