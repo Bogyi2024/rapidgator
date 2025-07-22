@@ -1,0 +1,29 @@
+name: Trigger Multiple Workflows - monsterhunters
+
+on:
+  workflow_dispatch:
+
+jobs:
+  trigger_workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run multiple workflow dispatches with delays
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW }}
+        run: |
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 2" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 3" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 4" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 5" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 6" --repo monsterhunters/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 7" --repo monsterhunters/rapidgator
