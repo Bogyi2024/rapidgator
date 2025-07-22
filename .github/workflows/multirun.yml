@@ -12,7 +12,7 @@ jobs:
 
       - name: Run multiple workflow dispatches with delays
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo Bogyi2024/rapidgator
           sleep 2
