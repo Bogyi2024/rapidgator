@@ -6,20 +6,31 @@ on:
 jobs:
   trigger_workflows:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Run multiple workflow dispatches dynamically
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: Bogyi2024/rapidgator
         run: |
-          # Fetch the raw pastebin content (just the lines that are workflow dispatch commands)
-          lines=$(curl -s https://pastebin.com/raw/gGFrt0Ci | grep -c '^gh workflow run')
+          set -e
 
-          echo "Found $lines workflows to trigger."
+          echo "Fetching pastebin content..."
+          content=$(curl -s https://pastebin.com/raw/gGFrt0Ci || { echo "Failed to fetch pastebin"; exit 1; })
+          echo "Pastebin content:"
+          echo "$content"
 
-          # Loop through line numbers and run commands accordingly
+          # Count how many lines start with 'gh workflow run'
+          lines=$(echo "$content" | grep -c '^gh workflow run' || true)
+          echo "Found $lines workflow commands to trigger."
+
+          if [ "$lines" -eq 0 ]; then
+            echo "No workflow commands found, exiting."
+            exit 0
+          fi
+
           for i in $(seq 1 $lines); do
             workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
             echo "Triggering workflow: $workflow_name"
