@@ -1,0 +1,34 @@
+name: Trigger Multiple Workflows
+
+on:
+  workflow_dispatch:  # manual trigger
+
+jobs:
+  trigger_workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (usually needed)
+        uses: actions/checkout@v3
+
+      - name: Run multiple workflow dispatches with delays
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}   # store your personal access token securely in repo secrets
+        run: |
+          # Login with GitHub CLI (gh)
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+
+          # Trigger workflows with 2s sleep between
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 2" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 3" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 4" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 5" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 6" --repo Bogyi2024/rapidgator
+          sleep 2
+          gh workflow run "Ubuntu - Rapidgator_Multiline - line 7" --repo Bogyi2024/rapidgator
