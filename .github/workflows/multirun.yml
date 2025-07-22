@@ -15,8 +15,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}   # store your personal access token securely in repo secrets
         run: |
-          # Login with GitHub CLI (gh)
-          echo "$GITHUB_TOKEN" | gh auth login --with-token
+          git init
+          git remote add origin https://github.com/Bogyi2024/rapidgator.git
+          gh auth login --with-token <<< GITHUB_TOKEN
 
           # Trigger workflows with 2s sleep between
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo Bogyi2024/rapidgator
