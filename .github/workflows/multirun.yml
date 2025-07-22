@@ -6,24 +6,23 @@ on:
 jobs:
   trigger_workflows:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-
-      - name: Run multiple workflow dispatches with delays
+      
+      - name: Run multiple workflow dispatches dynamically
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+          REPO: Bogyi2024/rapidgator
         run: |
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 2" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 3" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 4" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 5" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 6" --repo Bogyi2024/rapidgator
-          sleep 2
-          gh workflow run "Ubuntu - Rapidgator_Multiline - line 7" --repo Bogyi2024/rapidgator
+          # Fetch the raw pastebin content (just the lines that are workflow dispatch commands)
+          lines=$(curl -s https://pastebin.com/raw/gGFrt0Ci | grep -c '^gh workflow run')
+
+          echo "Found $lines workflows to trigger."
+
+          # Loop through line numbers and run commands accordingly
+          for i in $(seq 1 $lines); do
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
+            echo "Triggering workflow: $workflow_name"
+            gh workflow run "$workflow_name" --repo "$REPO"
+            sleep 2
+          done
