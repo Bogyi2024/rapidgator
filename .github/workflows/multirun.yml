@@ -12,9 +12,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Run multiple workflow dispatches with delays
-
-
-          # Trigger workflows with 2s sleep between
+        run: |
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 1" --repo Bogyi2024/rapidgator
           sleep 2
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 2" --repo Bogyi2024/rapidgator
