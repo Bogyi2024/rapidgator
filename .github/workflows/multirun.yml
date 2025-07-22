@@ -10,24 +10,25 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run multiple workflow dispatches dynamically
+      - name: Run multiple workflow dispatches with delays based on Pastebin URLs count
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: Bogyi2024/rapidgator
+          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
           set -e
 
           echo "Fetching pastebin content..."
-          content=$(curl -s https://pastebin.com/raw/gGFrt0Ci || { echo "Failed to fetch pastebin"; exit 1; })
+          content=$(curl -s $PASTEBIN_URL || { echo "Failed to fetch pastebin"; exit 1; })
           echo "Pastebin content:"
           echo "$content"
 
-          # Count how many lines start with 'gh workflow run'
-          lines=$(echo "$content" | grep -c '^gh workflow run' || true)
-          echo "Found $lines workflow commands to trigger."
+          # Count non-empty lines (URLs)
+          lines=$(echo "$content" | grep -cve '^\s*$')
+          echo "Found $lines URLs in pastebin."
 
           if [ "$lines" -eq 0 ]; then
-            echo "No workflow commands found, exiting."
+            echo "No URLs found, exiting."
             exit 0
           fi
 
