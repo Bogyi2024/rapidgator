@@ -21,7 +21,7 @@ jobs:
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 3" --repo monsterhunters/rapidgator
           sleep 1
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 4" --repo monsterhunters/rapidgator
-          sleep 10
+          sleep 40
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 5" --repo monsterhunters/rapidgator
           sleep 1
           gh workflow run "Ubuntu - Rapidgator_Multiline - line 6" --repo monsterhunters/rapidgator
