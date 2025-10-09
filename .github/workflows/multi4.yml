@@ -13,7 +13,7 @@ jobs:
       - name: Run multiple workflow dispatches with delays based on Pastebin URLs count
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW_2 }}
-          REPO: monsterhunters/rapidgator
+          REPO: alexwin007/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci  # change this if needed
         run: |
           set -e
