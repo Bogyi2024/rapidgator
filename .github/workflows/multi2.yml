@@ -13,7 +13,7 @@ jobs:
 
       - name: Trigger, Monitor, and Auto-Rerun
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW_2 }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: Bogyi2024/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
