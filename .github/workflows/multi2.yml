@@ -10,38 +10,76 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run multiple workflow dispatches with delays based on Pastebin URLs count
+      - name: Monitor and Rerun Workflows
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW }}
           REPO: monsterhunters/rapidgator
-          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci  # change this if needed
+          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
-          set -e
+          # Fetch and clean the list
+          content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
+          total_lines=$(echo "$content" | wc -l)
+          
+          echo "Found $total_lines URLs. Starting processing loop..."
 
-          echo "Fetching pastebin content..."
-          content=$(curl -s $PASTEBIN_URL || { echo "Failed to fetch pastebin"; exit 1; })
-          echo "Pastebin content:"
-          echo "$content"
+          current_line=0
+          echo "$content" | while IFS= read -r line_content; do
+            current_line=$((current_line + 1))
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $current_line"
+            
+            attempt=1
+            max_attempts=3
+            success=false
 
-          lines=$(echo "$content" | grep -cve '^\s*$')
-          echo "Found $lines URLs in pastebin."
+            while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
+              echo "--- [Line $current_line] Attempt $attempt ---"
+              
+              # 1. Trigger the workflow
+              gh workflow run "$workflow_name" --repo "$REPO"
+              sleep 15 # Wait for GitHub API to index the new run
 
-          if [ "$lines" -eq 0 ]; then
-            echo "No URLs found, exiting."
-            exit 0
-          fi
+              # 2. Grab the ID of the most recent run for this specific workflow
+              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId')
 
-          for i in $(seq 1 $lines); do
-            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
-            echo "Triggering workflow: $workflow_name"
-            gh workflow run "$workflow_name" --repo "$REPO"
+              if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+                echo "Monitoring Run ID: $run_id"
+                
+                # 3. Watch the run until it completes
+                gh run watch "$run_id" --repo "$REPO" || true
+                
+                # 4. Fetch details to check duration and outcome
+                run_data=$(gh run view "$run_id" --repo "$REPO" --json conclusion,createdAt,updatedAt)
+                conclusion=$(echo "$run_data" | jq -r '.conclusion')
+                
+                # Convert timestamps to Unix seconds
+                start_s=$(date -d $(echo "$run_data" | jq -r '.createdAt') +%s)
+                end_s=$(date -d $(echo "$run_data" | jq -r '.updatedAt') +%s)
+                duration=$((end_s - start_s))
 
-            # Sleep logic
-            if [ "$i" -eq 4 ]; then
-              echo "Sleeping 40 seconds after line 4"
+                echo "Result: $conclusion | Duration: ${duration}s"
+
+                # 5. Logic: Pass only if successful AND ran for >= 120 seconds
+                if [ "$conclusion" == "success" ] && [ "$duration" -ge 120 ]; then
+                  echo "✅ Line $current_line verified."
+                  success=true
+                else
+                  echo "⚠️ Criteria not met (Fail or < 2min). Retrying..."
+                  attempt=$((attempt + 1))
+                  [ $attempt -le $max_attempts ] && sleep 20
+                fi
+              else
+                echo "❌ Failed to find Run ID. Retrying trigger..."
+                attempt=$((attempt + 1))
+                sleep 10
+              fi
+            done
+
+            # Maintain your custom interval logic
+            if [ "$current_line" -eq 4 ]; then
+              echo "Line 4 complete. Sleeping 40s..."
               sleep 40
             else
-              echo "Sleeping 1 second"
-              sleep 1
+              echo "Moving to next line..."
+              sleep 2
             fi
           done
