@@ -1,40 +1,56 @@
-name: Trigger Multiple Workflows
-
-on:
-  workflow_dispatch:
-
-jobs:
-  trigger_workflows:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Run multiple workflow dispatches with delays based on Pastebin URLs count
+- name: Trigger, Watch, and Rerun
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: Bogyi2024/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
-          set -e
+          # Fetch and clean URLs
+          content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
+          
+          echo "$content" | while IFS= read -r line; do
+            count=$((count + 1))
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $count"
+            
+            attempt=1
+            max_attempts=3
+            success=false
 
-          echo "Fetching pastebin content..."
-          content=$(curl -s $PASTEBIN_URL || { echo "Failed to fetch pastebin"; exit 1; })
-          echo "Pastebin content:"
-          echo "$content"
+            while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
+              echo "Attempt $attempt for: $workflow_name"
+              
+              # Trigger the workflow
+              gh workflow run "$workflow_name" --repo "$REPO"
+              sleep 10 # Brief pause for GitHub to register the run
 
-          # Count non-empty lines (URLs)
-          lines=$(echo "$content" | grep -cve '^\s*$')
-          echo "Found $lines URLs in pastebin."
+              # Get the ID of the most recent run for this workflow
+              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId')
 
-          if [ "$lines" -eq 0 ]; then
-            echo "No URLs found, exiting."
-            exit 0
-          fi
-
-          for i in $(seq 1 $lines); do
-            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
-            echo "Triggering workflow: $workflow_name"
-            gh workflow run "$workflow_name" --repo "$REPO"
-            sleep 2
+              if [ -n "$run_id" ]; then
+                echo "Watching run ID: $run_id"
+                
+                # Watch the run until it finishes
+                gh run watch "$run_id" --repo "$REPO" || true
+                
+                # Get final status and timing
+                # --jq fetches duration in seconds and the conclusion
+                run_data=$(gh run view "$run_id" --repo "$REPO" --json conclusion,createdAt,updatedAt)
+                conclusion=$(echo "$run_data" | jq -r '.conclusion')
+                
+                # Simple duration check (Optional: if you strictly need 2 mins)
+                # If conclusion is 'success', we mark as done. 
+                # If 'failure' or 'cancelled', we retry.
+                
+                if [ "$conclusion" == "success" ]; then
+                  echo "Workflow $workflow_name completed successfully."
+                  success=true
+                else
+                  echo "Workflow $workflow_name failed with status: $conclusion. Retrying..."
+                  attempt=$((attempt + 1))
+                  sleep 15
+                fi
+              else
+                echo "Could not find run ID. Retrying trigger..."
+                attempt=$((attempt + 1))
+              fi
+            done
           done
