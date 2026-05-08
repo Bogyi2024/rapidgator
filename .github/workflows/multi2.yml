@@ -1,4 +1,4 @@
-name: Trigger Multiple Workflows - monsterhunters
+name: Trigger Multiple Workflows - alexwin
 
 on:
   workflow_dispatch:
@@ -6,80 +6,82 @@ on:
 jobs:
   trigger_workflows:
     runs-on: ubuntu-latest
+    timeout-minutes: 600 # Prevents the master workflow from timing out early
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Monitor and Rerun Workflows
+      - name: Trigger, Monitor, and Auto-Rerun
         env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW }}
-          REPO: monsterhunters/rapidgator
+          GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW_2 }}
+          REPO: Bogyi2024/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
-          # Fetch and clean the list
+          # Fetch and clean content
           content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
-          total_lines=$(echo "$content" | wc -l)
+          lines=$(echo "$content" | wc -l)
           
-          echo "Found $total_lines URLs. Starting processing loop..."
+          echo "Found $lines URLs. Starting processing..."
 
-          current_line=0
-          echo "$content" | while IFS= read -r line_content; do
-            current_line=$((current_line + 1))
-            workflow_name="Ubuntu - Rapidgator_Multiline - line $current_line"
+          for i in $(seq 1 $lines); do
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
             
             attempt=1
             max_attempts=3
             success=false
 
             while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
-              echo "--- [Line $current_line] Attempt $attempt ---"
+              echo "--- [Line $i] Attempt $attempt ---"
               
               # 1. Trigger the workflow
               gh workflow run "$workflow_name" --repo "$REPO"
-              sleep 15 # Wait for GitHub API to index the new run
+              
+              # 2. Wait for API propagation (Required to avoid 'stuck' old runs)
+              sleep 20 
 
-              # 2. Grab the ID of the most recent run for this specific workflow
-              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId')
+              # 3. Find the NEWEST run ID that is NOT completed
+              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 5 --json databaseId,status --jq '.[] | select(.status != "completed") | .databaseId' | head -n 1)
 
               if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
-                echo "Monitoring Run ID: $run_id"
+                echo "Watching Run ID: $run_id"
                 
-                # 3. Watch the run until it completes
-                gh run watch "$run_id" --repo "$REPO" || true
+                # 4. Watch the run until it finishes
+                # timeout ensures we don't hang forever if GH CLI glitches
+                timeout 30m gh run watch "$run_id" --repo "$REPO" || echo "Watch stopped."
                 
-                # 4. Fetch details to check duration and outcome
+                # 5. Evaluate the result
                 run_data=$(gh run view "$run_id" --repo "$REPO" --json conclusion,createdAt,updatedAt)
                 conclusion=$(echo "$run_data" | jq -r '.conclusion')
                 
-                # Convert timestamps to Unix seconds
-                start_s=$(date -d $(echo "$run_data" | jq -r '.createdAt') +%s)
-                end_s=$(date -d $(echo "$run_data" | jq -r '.updatedAt') +%s)
-                duration=$((end_s - start_s))
+                # Calculate Duration
+                start_time=$(date -d $(echo "$run_data" | jq -r '.createdAt') +%s)
+                end_time=$(date -d $(echo "$run_data" | jq -r '.updatedAt') +%s)
+                duration=$((end_time - start_time))
 
-                echo "Result: $conclusion | Duration: ${duration}s"
+                echo "Finished with status: $conclusion (Duration: ${duration}s)"
 
-                # 5. Logic: Pass only if successful AND ran for >= 120 seconds
+                # 6. Success check (Status Success AND Duration >= 120s)
                 if [ "$conclusion" == "success" ] && [ "$duration" -ge 120 ]; then
-                  echo "✅ Line $current_line verified."
+                  echo "✅ Line $i passed."
                   success=true
                 else
-                  echo "⚠️ Criteria not met (Fail or < 2min). Retrying..."
+                  echo "⚠️ Failure or run too short (< 2 min). Attempt $attempt failed."
                   attempt=$((attempt + 1))
-                  [ $attempt -le $max_attempts ] && sleep 20
+                  [ $attempt -le $max_attempts ] && sleep 15
                 fi
               else
-                echo "❌ Failed to find Run ID. Retrying trigger..."
+                echo "❌ No active run detected. Retrying trigger..."
                 attempt=$((attempt + 1))
                 sleep 10
               fi
             done
 
-            # Maintain your custom interval logic
-            if [ "$current_line" -eq 4 ]; then
-              echo "Line 4 complete. Sleeping 40s..."
+            # Your custom sleep logic
+            if [ "$i" -eq 4 ]; then
+              echo "Sleeping 40 seconds after line 4"
               sleep 40
             else
-              echo "Moving to next line..."
-              sleep 2
+              echo "Sleeping 5 seconds before next line"
+              sleep 5
             fi
           done
