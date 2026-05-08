@@ -1,0 +1,46 @@
+name: Trigger and 2-Min Wait - alexwin
+
+on:
+  workflow_dispatch:
+
+jobs:
+  trigger_and_wait:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Trigger All and Wait 2 Minutes
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          REPO: Bogyi2024/rapidgator
+          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
+        run: |
+          # 1. Fetch URLs
+          content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
+          lines=$(echo "$content" | wc -l)
+          
+          echo "Found $lines URLs. Launching all workflows..."
+
+          # 2. Trigger all workflows immediately
+          for i in $(seq 1 $lines); do
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
+            
+            echo "Launching: $workflow_name"
+            # We use '|| true' so if one trigger fails, the script continues to the next
+            gh workflow run "$workflow_name" --repo "$REPO" || echo "Failed to trigger line $i"
+            
+            # Small 1s delay just to prevent API spamming
+            sleep 1
+          done
+
+          echo "------------------------------------------"
+          echo "All workflows triggered."
+          echo "Starting 2-minute observation period..."
+          echo "------------------------------------------"
+
+          # 3. Flat wait for 2 minutes
+          sleep 120
+
+          echo "2 minutes are up. Master workflow is now finishing."
+          echo "Child workflows will continue running on their own."
