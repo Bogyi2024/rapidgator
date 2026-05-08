@@ -14,7 +14,7 @@ jobs:
       - name: Launch and Monitor All Lines
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO: alexwin007/rapidgator
+          REPO: Bogyi2024/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
           # 1. Fetch URLs and get count
