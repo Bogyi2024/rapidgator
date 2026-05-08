@@ -1,46 +1,69 @@
-name: Trigger and 2-Min Wait - alexwin
+name: Parallel Watchdog (2-Min Minimum) - alexwin
 
 on:
   workflow_dispatch:
 
 jobs:
-  trigger_and_wait:
+  trigger_and_verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 600
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Trigger All and Wait 2 Minutes
+      - name: Parallel Launch with 2-Min Rerun Logic
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: Bogyi2024/rapidgator
           PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
-          # 1. Fetch URLs
           content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
           lines=$(echo "$content" | wc -l)
-          
-          echo "Found $lines URLs. Launching all workflows..."
+          echo "Found $lines URLs. Launching Watchdog..."
 
-          # 2. Trigger all workflows immediately
+          monitor_and_ensure_min_run() {
+            local i=$1
+            local workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
+            local success=false
+            
+            while [ "$success" = false ]; do
+              echo "[Line $i] Triggering workflow..."
+              gh workflow run "$workflow_name" --repo "$REPO"
+              
+              # Wait for the API to register the run
+              sleep 20 
+
+              # Find the ID of the run we just started
+              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 1 --json databaseId,status --jq '.[0].databaseId')
+              
+              echo "[Line $i] Monitoring Run ID: $run_id for 2 minutes..."
+              
+              # Check the status every 30 seconds for a total of 120 seconds
+              for check in {1..4}; do
+                sleep 30
+                status_data=$(gh run view "$run_id" --repo "$REPO" --json status,conclusion)
+                current_status=$(echo "$status_data" | jq -r '.status')
+                
+                if [ "$current_status" == "completed" ]; then
+                  echo "⚠️ [Line $i] Finished too early (under 2 mins)! Rerunning..."
+                  break # Exit the check loop to trigger a new run via the outer while loop
+                fi
+                
+                if [ "$check" -eq 4 ]; then
+                  echo "✅ [Line $i] Still running after 2 mins. Requirement met."
+                  success=true
+                fi
+              done
+            done
+          }
+
+          # Launch all lines in parallel
           for i in $(seq 1 $lines); do
-            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
-            
-            echo "Launching: $workflow_name"
-            # We use '|| true' so if one trigger fails, the script continues to the next
-            gh workflow run "$workflow_name" --repo "$REPO" || echo "Failed to trigger line $i"
-            
-            # Small 1s delay just to prevent API spamming
-            sleep 1
+            monitor_and_ensure_min_run "$i" &
+            # Throttle triggers slightly to avoid GitHub API 403 errors
+            sleep 2
           done
 
-          echo "------------------------------------------"
-          echo "All workflows triggered."
-          echo "Starting 2-minute observation period..."
-          echo "------------------------------------------"
-
-          # 3. Flat wait for 2 minutes
-          sleep 120
-
-          echo "2 minutes are up. Master workflow is now finishing."
-          echo "Child workflows will continue running on their own."
+          # Wait for all watchdog processes to confirm their 2-minute mark
+          wait
+          echo "All workflows have successfully passed the 2-minute runtime mark."
