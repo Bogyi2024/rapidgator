@@ -10,38 +10,74 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run multiple workflow dispatches with delays based on Pastebin URLs count
+      - name: Trigger, Monitor, and Auto-Rerun
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN_NEW_2 }}
           REPO: monsterhunters/rapidgator
-          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci  # change this if needed
+          PASTEBIN_URL: https://pastebin.com/raw/gGFrt0Ci
         run: |
-          set -e
+          # Fetch and clean content (removing empty lines)
+          content=$(curl -sL $PASTEBIN_URL | sed '/^\s*$/d')
+          lines=$(echo "$content" | wc -l)
+          
+          echo "Found $lines URLs. Starting processing..."
 
-          echo "Fetching pastebin content..."
-          content=$(curl -s $PASTEBIN_URL || { echo "Failed to fetch pastebin"; exit 1; })
-          echo "Pastebin content:"
-          echo "$content"
+          count=0
+          echo "$content" | while IFS= read -r line; do
+            count=$((count + 1))
+            workflow_name="Ubuntu - Rapidgator_Multiline - line $count"
+            
+            attempt=1
+            max_attempts=3
+            success=false
 
-          lines=$(echo "$content" | grep -cve '^\s*$')
-          echo "Found $lines URLs in pastebin."
+            while [ $attempt -le $max_attempts ] && [ "$success" = false ]; do
+              echo "--- Line $count: Attempt $attempt ---"
+              
+              # 1. Trigger the workflow
+              gh workflow run "$workflow_name" --repo "$REPO"
+              sleep 10 # Wait for GitHub API to register the run
 
-          if [ "$lines" -eq 0 ]; then
-            echo "No URLs found, exiting."
-            exit 0
-          fi
+              # 2. Get the ID of the run we just started
+              run_id=$(gh run list --workflow "$workflow_name" --repo "$REPO" --limit 1 --json databaseId --jq '.[0].databaseId')
 
-          for i in $(seq 1 $lines); do
-            workflow_name="Ubuntu - Rapidgator_Multiline - line $i"
-            echo "Triggering workflow: $workflow_name"
-            gh workflow run "$workflow_name" --repo "$REPO"
+              if [ -n "$run_id" ]; then
+                echo "Watching Run ID: $run_id"
+                
+                # 3. Watch the workflow until it finishes
+                gh run watch "$run_id" --repo "$REPO" || true
+                
+                # 4. Analyze results
+                run_data=$(gh run view "$run_id" --repo "$REPO" --json conclusion,createdAt,updatedAt)
+                conclusion=$(echo "$run_data" | jq -r '.conclusion')
+                
+                # Calculate duration in seconds
+                start_time=$(date -d $(echo "$run_data" | jq -r '.createdAt') +%s)
+                end_time=$(date -d $(echo "$run_data" | jq -r '.updatedAt') +%s)
+                duration=$((end_time - start_time))
 
-            # Sleep logic
-            if [ "$i" -eq 4 ]; then
-              echo "Sleeping 40 seconds after line 4"
+                echo "Workflow finished with status: $conclusion (Duration: ${duration}s)"
+
+                # 5. Logic: Success if status is success AND ran for at least 120 seconds (2 min)
+                if [ "$conclusion" == "success" ] && [ "$duration" -ge 120 ]; then
+                  echo "✅ Success: Line $count passed requirements."
+                  success=true
+                else
+                  echo "⚠️ Failure or short run (< 2 min). Retrying in 15s..."
+                  attempt=$((attempt + 1))
+                  sleep 15
+                fi
+              else
+                echo "❌ Error: Could not capture Run ID. Retrying trigger..."
+                attempt=$((attempt + 1))
+              fi
+            done
+
+            # Maintain your custom sleep logic between different line items
+            if [ "$count" -eq 4 ]; then
+              echo "Finished line 4. Sleeping 40s per your rules..."
               sleep 40
             else
-              echo "Sleeping 1 second"
-              sleep 1
+              sleep 2
             fi
           done
