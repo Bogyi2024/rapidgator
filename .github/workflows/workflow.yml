@@ -78,7 +78,7 @@ jobs:
             start_time=$(date +%s)
             
             # Ensure this path matches your script location
-            python dep_download/rpgx.py
+            python rpgx.py
             exit_code=$?
             
             end_time=$(date +%s)
