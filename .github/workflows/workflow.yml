@@ -1,0 +1,100 @@
+name: Rapidgator to HF Batch
+on:
+  workflow_dispatch:
+    inputs:
+      source_type:
+        required: false
+      rg_email:
+        required: true
+      rg_password:
+        required: true
+      rg_links:
+        required: true
+      hf_token:
+        required: true
+      repo_id:
+        required: true
+      repo_type:
+        required: true
+
+jobs:
+  prepare_links:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          links="${{ github.event.inputs.rg_links }}"
+          # Convert multiline text into a JSON array to feed the matrix strategy
+          JSON_ARRAY=$(echo "$links" | grep -v '^$' | jq -R . | jq -s .)
+          echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+
+  download_and_upload:
+    needs: prepare_links
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 20
+      fail-fast: false
+      matrix:
+        link: ${{ fromJson(needs.prepare_links.outputs.matrix) }}
+    
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2
+          pip install requests huggingface-hub
+
+      - name: Download Python Script
+        # Make sure this URL points to your actual rpgl_ml.py file!
+        run: wget -O rpgl_ml.py "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml.py"
+
+      - name: Execute Transfer with 2-Min Watchdog
+        env:
+          RG_EMAIL: ${{ github.event.inputs.rg_email }}
+          RG_PASSWORD: ${{ github.event.inputs.rg_password }}
+          RG_LINK: ${{ matrix.link }}
+          HF_TOKEN: ${{ github.event.inputs.hf_token }}
+          REPO_ID: ${{ github.event.inputs.repo_id }}
+          REPO_TYPE: ${{ github.event.inputs.repo_type }}
+        run: |
+          success=false
+          max_retries=5
+          attempt=1
+          
+          while [ "$success" = false ] && [ "$attempt" -le "$max_retries" ]; do
+            echo "▶️ [Watchdog] Attempt $attempt of $max_retries for link: ${{ matrix.link }}"
+            start_time=$(date +%s)
+            
+            # Run the Python script
+            python rpgl_ml.py
+            exit_code=$?
+            
+            end_time=$(date +%s)
+            duration=$((end_time - start_time))
+            
+            # Watchdog Logic: Must run for at least 120 seconds AND exit without errors
+            if [ "$duration" -lt 120 ]; then
+              echo "⚠️ [Watchdog] Finished too early ($duration seconds). Minimum is 120s! Retrying in 15s..."
+              sleep 15
+              attempt=$((attempt + 1))
+            elif [ "$exit_code" -ne 0 ]; then
+              echo "⚠️ [Watchdog] Script crashed after $duration seconds. Retrying in 15s..."
+              sleep 15
+              attempt=$((attempt + 1))
+            else
+              echo "✅ [Watchdog] Success! Ran securely for $duration seconds."
+              success=true
+            fi
+          done
+          
+          if [ "$success" = false ]; then
+            echo "❌ [Watchdog] Job completely failed after $max_retries attempts."
+            exit 1
+          fi
