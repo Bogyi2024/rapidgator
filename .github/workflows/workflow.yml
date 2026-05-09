@@ -18,6 +18,15 @@ on:
         required: true
       repo_type:
         required: true
+      worker_pool:
+        required: false
+        default: '[]'
+      master_owner:
+        required: false
+      master_repo:
+        required: false
+      master_token:
+        required: false
 
 jobs:
   prepare_links:
@@ -27,12 +36,9 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          # Safely capture multiline input from React
           cat << 'EOF' > links.txt
           ${{ github.event.inputs.rg_links }}
           EOF
-          
-          # Convert lines into a clean JSON array for the matrix
           JSON_ARRAY=$(grep -v '^$' links.txt | jq -R . | jq -s -c .)
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
@@ -60,7 +66,7 @@ jobs:
           sudo apt-get install -y aria2
           pip install requests huggingface-hub
 
-      - name: Execute Transfer with 2-Min Watchdog
+      - name: Execute Transfer with Smart Watchdog
         env:
           RG_EMAIL: ${{ github.event.inputs.rg_email }}
           RG_PASSWORD: ${{ github.event.inputs.rg_password }}
@@ -68,9 +74,18 @@ jobs:
           HF_TOKEN: ${{ github.event.inputs.hf_token }}
           REPO_ID: ${{ github.event.inputs.repo_id }}
           REPO_TYPE: ${{ github.event.inputs.repo_type }}
+          # Orchestrator Variables passed to Python
+          WORKER_POOL: ${{ github.event.inputs.worker_pool }}
+          MASTER_OWNER: ${{ github.event.inputs.master_owner }}
+          MASTER_REPO: ${{ github.event.inputs.master_repo }}
+          MASTER_TOKEN: ${{ github.event.inputs.master_token }}
         run: |
-          # 1. Disable "exit on error" so the loop doesn't break when Python fails
           set +e 
+          
+          # Wait based on job-index to stagger logins and prevent IP blocking
+          DELAY=$(( ${{ strategy.job-index }} * 15 ))
+          echo "⏳ Waiting $DELAY seconds to prevent login collision..."
+          sleep $DELAY
           
           success=false
           max_retries=5
@@ -80,7 +95,6 @@ jobs:
             echo "▶️ Attempt $attempt of $max_retries..."
             start_time=$(date +%s)
             
-            # 2. Run your script
             python rpgx.py
             exit_code=$?
             
@@ -89,16 +103,17 @@ jobs:
             
             echo "⏱️ Job duration: $duration seconds (Exit Code: $exit_code)"
             
-            # 3. WATCHDOG LOGIC: 
-            # Retry if the script crashed (exit_code != 0) 
-            # OR if it finished suspiciously fast (< 120 seconds)
+            # SMART WATCHDOG: Check for Handoff signal
+            if [ "$exit_code" -eq 42 ]; then
+               echo "✅ IP Block detected, but Webhook successfully sent to Master."
+               echo "This runner is shutting down gracefully to let the next worker handle it."
+               success=true
+               break
+            fi
+            
             if [ "$exit_code" -ne 0 ] || [ "$duration" -lt 120 ]; then
-              if [ "$exit_code" -ne 0 ]; then
-                echo "⚠️ ERROR: Python script crashed (Login or connection failed)."
-              fi
-              if [ "$duration" -lt 120 ]; then
-                echo "⚠️ ERROR: Finished too fast ($duration s). Minimum required is 120s!"
-              fi
+              if [ "$exit_code" -ne 0 ]; then echo "⚠️ ERROR: Python script crashed."; fi
+              if [ "$duration" -lt 120 ]; then echo "⚠️ ERROR: Finished too fast ($duration s)."; fi
               
               echo "🔄 Retrying in 20 seconds..."
               sleep 20
@@ -109,7 +124,6 @@ jobs:
             fi
           done
 
-          # 4. If all retries fail, exit with an error so GitHub shows a red 'X'
           if [ "$success" = false ]; then
             echo "❌ CRITICAL: Job failed after $max_retries attempts."
             exit 1
