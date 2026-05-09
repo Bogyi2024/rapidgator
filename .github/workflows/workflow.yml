@@ -23,12 +23,12 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          # Safely capture multiline input
+          # Safely capture multiline input from React
           cat << 'EOF' > links.txt
           ${{ github.event.inputs.rg_links }}
           EOF
           
-          # Convert to clean JSON array for the matrix
+          # Convert lines into a clean JSON array for the matrix
           JSON_ARRAY=$(grep -v '^$' links.txt | jq -R . | jq -s -c .)
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
@@ -69,18 +69,22 @@ jobs:
           max_retries=5
           attempt=1
           while [ "$success" = false ] && [ "$attempt" -le "$max_retries" ]; do
-            echo "Attempt $attempt of $max_retries..."
+            echo "▶️ Attempt $attempt of $max_retries..."
             start_time=$(date +%s)
+            
+            # Ensure this path matches your script location
             python dep_download/rpgl_ml.py
             exit_code=$?
+            
             end_time=$(date +%s)
             duration=$((end_time - start_time))
+            
             if [ "$duration" -lt 120 ] || [ "$exit_code" -ne 0 ]; then
-              echo "⚠️ Failed or too fast ($duration s). Retrying..."
+              echo "⚠️ Failed or finished too fast ($duration s). Retrying in 15s..."
               sleep 15
               attempt=$((attempt + 1))
             else
-              echo "✅ Success!"
+              echo "✅ Success! Ran for $duration seconds."
               success=true
             fi
           done
