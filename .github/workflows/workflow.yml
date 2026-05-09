@@ -2,6 +2,11 @@ name: Rapidgator to HF Batch
 on:
   workflow_dispatch:
     inputs:
+      # Add this block here:
+      source_type:
+        description: 'Source Type'
+        required: false
+        type: string
       rg_email:
         required: true
       rg_password:
