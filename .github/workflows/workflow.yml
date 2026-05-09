@@ -3,19 +3,33 @@ on:
   workflow_dispatch:
     inputs:
       source_type:
+        description: 'Source Type'
         required: false
+        type: string
       rg_email:
+        description: 'Rapidgator Email'
         required: true
+        type: string
       rg_password:
+        description: 'Rapidgator Password'
         required: true
+        type: string
       rg_links:
+        description: 'Rapidgator Links'
         required: true
+        type: string
       hf_token:
+        description: 'HF Write Token'
         required: true
+        type: string
       repo_id:
+        description: 'HF Repo ID'
         required: true
+        type: string
       repo_type:
+        description: 'HF Repo Type'
         required: true
+        type: string
 
 jobs:
   prepare_links:
@@ -52,7 +66,7 @@ jobs:
           pip install requests huggingface-hub
 
       - name: Download Python Script
-        # Make sure this URL points to your actual rpgl_ml.py file!
+        # Make sure this URL points to your actual python script location on GitHub!
         run: wget -O rpgx.py "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgx.py"
 
       - name: Execute Transfer with 2-Min Watchdog
