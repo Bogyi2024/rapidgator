@@ -2,7 +2,6 @@ name: Rapidgator to HF Batch
 on:
   workflow_dispatch:
     inputs:
-      # Add this block here:
       source_type:
         description: 'Source Type'
         required: false
@@ -70,26 +69,48 @@ jobs:
           REPO_ID: ${{ github.event.inputs.repo_id }}
           REPO_TYPE: ${{ github.event.inputs.repo_type }}
         run: |
+          # 1. Disable "exit on error" so the loop doesn't break when Python fails
+          set +e 
+          
           success=false
           max_retries=5
           attempt=1
+          
           while [ "$success" = false ] && [ "$attempt" -le "$max_retries" ]; do
             echo "▶️ Attempt $attempt of $max_retries..."
             start_time=$(date +%s)
             
-            # Ensure this path matches your script location
+            # 2. Run your script
             python rpgx.py
             exit_code=$?
             
             end_time=$(date +%s)
             duration=$((end_time - start_time))
             
-            if [ "$duration" -lt 120 ] || [ "$exit_code" -ne 0 ]; then
-              echo "⚠️ Failed or finished too fast ($duration s). Retrying in 15s..."
-              sleep 15
+            echo "⏱️ Job duration: $duration seconds (Exit Code: $exit_code)"
+            
+            # 3. WATCHDOG LOGIC: 
+            # Retry if the script crashed (exit_code != 0) 
+            # OR if it finished suspiciously fast (< 120 seconds)
+            if [ "$exit_code" -ne 0 ] || [ "$duration" -lt 120 ]; then
+              if [ "$exit_code" -ne 0 ]; then
+                echo "⚠️ ERROR: Python script crashed (Login or connection failed)."
+              fi
+              if [ "$duration" -lt 120 ]; then
+                echo "⚠️ ERROR: Finished too fast ($duration s). Minimum required is 120s!"
+              fi
+              
+              echo "🔄 Retrying in 20 seconds..."
+              sleep 20
               attempt=$((attempt + 1))
             else
-              echo "✅ Success! Ran for $duration seconds."
+              echo "✅ SUCCESS: Job completed securely in $duration seconds."
               success=true
             fi
           done
+
+          # 4. If all retries fail, exit with an error so GitHub shows a red 'X'
+          if [ "$success" = false ]; then
+            echo "❌ CRITICAL: Job failed after $max_retries attempts."
+            exit 1
+          fi
