@@ -2,10 +2,10 @@ import os
 import re
 import requests
 import subprocess
+import sys
 from huggingface_hub import HfApi
 
 # === READ SECRETS FROM GITHUB ACTIONS ENVIRONMENT ===
-# These are passed automatically by your React Web UI!
 rg_email = os.environ.get('RG_EMAIL')
 rg_password = os.environ.get('RG_PASSWORD')
 rg_link = os.environ.get('RG_LINK')
@@ -60,8 +60,57 @@ def main():
     
     print("[*] Generating premium download URL...")
     dl_res = requests.get('https://rapidgator.net/api/v2/file/download', params={'file_id': file_id, 'token': token}).json()
-    download_url = dl_res['response']['download_url']
     
+    # === NEW: SAFE URL EXTRACTION & WEBHOOK HANDOFF ===
+    try:
+        if dl_res and dl_res.get('status') == 400:
+            raise ValueError(dl_res.get('error', 'API Refused'))
+        download_url = dl_res['response']['download_url']
+        
+    except (TypeError, KeyError, ValueError) as e:
+        print(f"⚠️ Rapidgator API Failure / IP Blocked. Reason: {e}")
+        print("📞 Calling back to Master Workflow for a runner switch...")
+        
+        master_owner = os.environ.get('MASTER_OWNER')
+        master_repo = os.environ.get('MASTER_REPO')
+        master_token = os.environ.get('MASTER_TOKEN')
+        worker_pool_str = os.environ.get('WORKER_POOL', '[]')
+        current_worker = os.environ.get('GITHUB_REPOSITORY_OWNER')
+        
+        if not master_token or not master_owner:
+            print("❌ No Master credentials provided. Cannot trigger handoff.")
+            sys.exit(1)
+            
+        url = f"https://api.github.com/repos/{master_owner}/{master_repo}/dispatches"
+        payload = {
+            "event_type": "child_failed",
+            "client_payload": {
+                "failed_link": rg_link,
+                "failed_worker": current_worker,
+                "worker_pool": worker_pool_str,
+                # Pass back the original inputs so Master can fire the new job identically
+                "rg_email": rg_email,
+                "rg_password": rg_password,
+                "hf_token": hf_token,
+                "repo_id": repo_id,
+                "repo_type": repo_type
+            }
+        }
+        
+        res = requests.post(
+            url, json=payload, 
+            headers={"Authorization": f"Bearer {master_token}", "Accept": "application/vnd.github.v3+json"}
+        )
+
+        if res.status_code == 204:
+            print("✅ Successfully notified Master to take over. Shutting down cleanly.")
+            sys.exit(42) # Exit 42 tells bash script it was a deliberate handoff!
+        else:
+            print(f"❌ Failed to notify Master: {res.text}")
+            sys.exit(1)
+    
+    # === END NEW CODE ===
+
     local_filepath = os.path.join(output_path, filename)
     
     print(f"[*] Downloading with aria2c (16 connections)...")
@@ -73,7 +122,6 @@ def main():
     print(f"[*] Authenticating with Hugging Face...")
     api = HfApi(token=hf_token)
     
-    # Auto-create the repo if it doesn't exist yet
     try:
         api.create_repo(repo_id=repo_id, repo_type=repo_type, exist_ok=True)
         print(f"[*] Verified repository: {repo_id}")
