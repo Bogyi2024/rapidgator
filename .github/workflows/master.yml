@@ -1,0 +1,71 @@
+name: Master Orchestrator
+
+on:
+  repository_dispatch:
+    types: [child_failed]
+
+jobs:
+  reassign_worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process Failure and Reassign
+        env:
+          PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
+          MASTER_OWNER: ${{ github.repository_owner }}
+          MASTER_REPO: ${{ github.event.repository.name }}
+        run: |
+          python -c "
+          import os, json, requests
+
+          payload_str = os.environ.get('PAYLOAD_JSON', '{}')
+          payload = json.loads(payload_str)
+
+          pool = json.loads(payload.get('worker_pool', '[]'))
+          failed_worker = payload.get('failed_worker')
+          link = payload.get('failed_link')
+
+          print(f'🚨 Received failure report from: {failed_worker}')
+          print(f'🔗 Link to retry: {link}')
+
+          # Find who failed, and pick the next one in the list
+          try:
+              current_idx = next(i for i, w in enumerate(pool) if w['user'] == failed_worker)
+              next_worker = pool[current_idx + 1]
+          except StopIteration:
+              print('❌ Failed worker not in pool list. Cannot reassign.')
+              exit(1)
+          except IndexError:
+              print('❌ Out of backup workers. The entire pool has been exhausted.')
+              exit(1)
+
+          print(f'🚀 Reassigning to new worker: {next_worker[\"user\"]}')
+
+          url = f'https://api.github.com/repos/{next_worker[\"user\"]}/{os.environ[\"MASTER_REPO\"]}/actions/workflows/workflow.yml/dispatches'
+          dispatch_payload = {
+              'ref': 'main',
+              'inputs': {
+                  'source_type': 'rapidgator',
+                  'rg_links': link,
+                  'worker_pool': payload.get('worker_pool'),
+                  'master_owner': os.environ['MASTER_OWNER'],
+                  'master_repo': os.environ['MASTER_REPO'],
+                  'master_token': next_worker['token'], # Since it's the master doing this, we can pull token directly from pool
+                  'rg_email': payload.get('rg_email'),
+                  'rg_password': payload.get('rg_password'),
+                  'hf_token': payload.get('hf_token'),
+                  'repo_id': payload.get('repo_id'),
+                  'repo_type': payload.get('repo_type')
+              }
+          }
+
+          res = requests.post(
+              url, json=dispatch_payload, 
+              headers={'Authorization': f'Bearer {next_worker[\"token\"]}', 'Accept': 'application/vnd.github.v3+json'}
+          )
+
+          if res.status_code == 204:
+              print('✅ Successfully dispatched to new worker.')
+          else:
+              print(f'❌ Dispatch failed: {res.text}')
+              exit(1)
+          "
