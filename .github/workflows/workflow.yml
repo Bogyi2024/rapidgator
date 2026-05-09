@@ -53,7 +53,7 @@ jobs:
 
       - name: Download Python Script
         # Make sure this URL points to your actual rpgl_ml.py file!
-        run: wget -O rpgl_ml.py "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgl_ml.py"
+        run: wget -O rpgx.py "https://raw.githubusercontent.com/Bogyi2024/log/main/dep_download/rpgx.py"
 
       - name: Execute Transfer with 2-Min Watchdog
         env:
@@ -73,7 +73,7 @@ jobs:
             start_time=$(date +%s)
             
             # Run the Python script
-            python rpgl_ml.py
+            python rpgx.py
             exit_code=$?
             
             end_time=$(date +%s)
