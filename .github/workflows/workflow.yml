@@ -27,6 +27,10 @@ on:
         required: false
       master_token:
         required: false
+      # NEW: Tracks the number of times this link bounced
+      fallback_attempt:
+        required: false
+        default: '0'
 
 jobs:
   prepare_links:
@@ -79,6 +83,7 @@ jobs:
           MASTER_OWNER: ${{ github.event.inputs.master_owner }}
           MASTER_REPO: ${{ github.event.inputs.master_repo }}
           MASTER_TOKEN: ${{ github.event.inputs.master_token }}
+          FALLBACK_ATTEMPT: ${{ github.event.inputs.fallback_attempt }}
         run: |
           set +e 
           
