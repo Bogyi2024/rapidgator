@@ -49,7 +49,7 @@ jobs:
                   'worker_pool': payload.get('worker_pool'),
                   'master_owner': os.environ['MASTER_OWNER'],
                   'master_repo': os.environ['MASTER_REPO'],
-                  'master_token': next_worker['token'], # Since it's the master doing this, we can pull token directly from pool
+                  'master_token': pool[0]['token'], # Since it's the master doing this, we can pull token directly from pool
                   'rg_email': payload.get('rg_email'),
                   'rg_password': payload.get('rg_password'),
                   'hf_token': payload.get('hf_token'),
