@@ -1,4 +1,8 @@
 name: Rapidgator to HF Batch
+
+# NOTE: every `github.event.inputs.*` below is what the frontend sends.
+# Nothing about the input names / sources was changed - only how they are used.
+
 on:
   workflow_dispatch:
     inputs:
@@ -27,10 +31,13 @@ on:
         required: false
       master_token:
         required: false
-      # NEW: Tracks the number of times this link bounced
+      # Tracks how many times this link bounced between workers
       fallback_attempt:
         required: false
         default: '0'
+
+permissions:
+  contents: read
 
 jobs:
   prepare_links:
@@ -38,29 +45,48 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      # No heredoc + no direct interpolation: links go through an env var, so
+      # quotes / special characters can no longer break the shell script.
       - id: set-matrix
+        env:
+          RG_LINKS: ${{ github.event.inputs.rg_links }}
         run: |
-          cat << 'EOF' > links.txt
-          ${{ github.event.inputs.rg_links }}
-          EOF
-          JSON_ARRAY=$(grep -v '^$' links.txt | jq -R . | jq -s -c .)
-          echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          printf '%s\n' "$RG_LINKS" \
+            | sed -e 's/\r$//' -e '/^[[:space:]]*$/d' \
+            | jq -R . | jq -s -c . > matrix.json
+
+          COUNT=$(jq 'length' matrix.json)
+          echo "Link count: $COUNT"
+          if [ "$COUNT" -eq 0 ]; then
+            echo "::error::rg_links is empty - nothing to transfer."
+            exit 1
+          fi
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
 
   download_and_upload:
     needs: prepare_links
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN needs contents:write so it can fire repository_dispatch
+    # (the fallback handoff path inside rpgx.py).
+    permissions:
+      contents: write
+    timeout-minutes: 350
     strategy:
-      max-parallel: 20
+      # Was 20. Every parallel job logs into the same Rapidgator account from a
+      # different IP, which is what gets the login endpoint to start dropping
+      # connections. 5 is a safe default; raise it only if you see no blocks.
+      max-parallel: 5
       fail-fast: false
       matrix:
         link: ${{ fromJson(needs.prepare_links.outputs.matrix) }}
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -68,65 +94,82 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y aria2
-          pip install requests huggingface-hub
+          python -m pip install --upgrade pip
+          # curl_cffi is the actual fix: python-requests' TLS fingerprint is
+          # what rapidgator.net drops with "SSL: UNEXPECTED_EOF_WHILE_READING".
+          python -m pip install --no-cache-dir requests huggingface-hub curl_cffi
 
       - name: Execute Transfer with Smart Watchdog
+        timeout-minutes: 330
         env:
+          # ---- frontend inputs, unchanged ----
           RG_EMAIL: ${{ github.event.inputs.rg_email }}
           RG_PASSWORD: ${{ github.event.inputs.rg_password }}
           RG_LINK: ${{ matrix.link }}
           HF_TOKEN: ${{ github.event.inputs.hf_token }}
           REPO_ID: ${{ github.event.inputs.repo_id }}
           REPO_TYPE: ${{ github.event.inputs.repo_type }}
-          # Orchestrator Variables passed to Python
+          # Orchestrator variables passed to Python
           WORKER_POOL: ${{ github.event.inputs.worker_pool }}
           MASTER_OWNER: ${{ github.event.inputs.master_owner }}
           MASTER_REPO: ${{ github.event.inputs.master_repo }}
           MASTER_TOKEN: ${{ github.event.inputs.master_token }}
           FALLBACK_ATTEMPT: ${{ github.event.inputs.fallback_attempt }}
         run: |
-          set +e 
-          
-          # Wait based on job-index to stagger logins and prevent IP blocking
+          set +e
+
+          # Stagger logins so parallel matrix jobs don't hit /user/login at once.
           DELAY=$(( ${{ strategy.job-index }} * 15 ))
           echo "⏳ Waiting $DELAY seconds to prevent login collision..."
           sleep $DELAY
-          
+
           success=false
           max_retries=5
           attempt=1
-          
+
           while [ "$success" = false ] && [ "$attempt" -le "$max_retries" ]; do
             echo "▶️ Attempt $attempt of $max_retries..."
             start_time=$(date +%s)
-            
-            python rpgx.py
+
+            python -u rpgx.py          # -u: unbuffered, keeps log order truthful
             exit_code=$?
-            
-            end_time=$(date +%s)
-            duration=$((end_time - start_time))
-            
+
+            duration=$(( $(date +%s) - start_time ))
             echo "⏱️ Job duration: $duration seconds (Exit Code: $exit_code)"
-            
-            # SMART WATCHDOG: Check for Handoff signal
-            if [ "$exit_code" -eq 42 ]; then
-               echo "✅ IP Block detected, but Webhook successfully sent to Master."
-               echo "This runner is shutting down gracefully to let the next worker handle it."
-               success=true
-               break
-            fi
-            
-            if [ "$exit_code" -ne 0 ] || [ "$duration" -lt 120 ]; then
-              if [ "$exit_code" -ne 0 ]; then echo "⚠️ ERROR: Python script crashed."; fi
-              if [ "$duration" -lt 120 ]; then echo "⚠️ ERROR: Finished too fast ($duration s)."; fi
-              
+
+            case "$exit_code" in
+              0)
+                # Guard against "exited 0 without doing anything".
+                if [ "$duration" -lt 120 ]; then
+                  echo "⚠️ ERROR: Finished too fast ($duration s)."
+                else
+                  echo "✅ SUCCESS: Job completed securely in $duration seconds."
+                  success=true
+                  break
+                fi
+                ;;
+              42)
+                # rpgx.py already delivered the handoff to Master.
+                echo "✅ IP block detected, and the Master was notified."
+                echo "This runner shuts down gracefully; the next worker takes the link."
+                success=true
+                break
+                ;;
+              2)
+                # Deleted file / bad credentials / rejected HF token.
+                echo "🛑 PERMANENT FAILURE: no point retrying here or handing off."
+                exit 1
+                ;;
+              *)
+                echo "⚠️ ERROR: Python script failed (exit $exit_code)."
+                ;;
+            esac
+
+            if [ "$attempt" -lt "$max_retries" ]; then
               echo "🔄 Retrying in 20 seconds..."
               sleep 20
-              attempt=$((attempt + 1))
-            else
-              echo "✅ SUCCESS: Job completed securely in $duration seconds."
-              success=true
             fi
+            attempt=$((attempt + 1))
           done
 
           if [ "$success" = false ]; then
