@@ -4,15 +4,22 @@ name: Master Orchestrator
 # in the pool.
 #
 # Fixed vs the old version:
-#   1. `master_token` passed to the next child is looked up by USER NAME
-#      (the pool entry that owns MASTER_OWNER), not `pool[0]`. pool[0] is a
-#      random worker after rotation, and only the Master owner's PAT can
-#      dispatch into the Master repo (everything else gets 404).
-#   2. Optional repo secret MASTER_PAT is used as a backup if the pool has no
-#      entry for MASTER_OWNER.
-#   3. fallback_attempt is incremented and capped, so a dead link cannot bounce
-#      around the pool forever.
-#   4. Clear messages instead of a bare traceback when the pool is exhausted.
+#   1. RING ROTATION. The old code did `if idx + 1 >= len(pool): exit(1)` and
+#      dropped the link whenever the LAST pool member failed - even though the
+#      other workers had never tried it (that is what killed Wde93.part2.rar and
+#      Ads95.part2.rar). Now `pool[(idx + 1) % len(pool)]` wraps around and the
+#      fallback_attempt cap stops it after one full round.
+#   2. `master_token` handed to the next child is chosen by CAPABILITY, not by
+#      name or index: every pool token is probed for push access to this Master
+#      repo and the first one that really has it is used. pool[0] used to be a
+#      random worker after rotation and only the Master owner's PAT can dispatch
+#      here, so everything else got 404. Moving the Master to another account
+#      now needs no code change.
+#   3. Optional repo secret MASTER_PAT is probed as one more candidate.
+#   4. fallback_attempt is left to the caller and capped, so a dead link cannot
+#      bounce around the pool forever, and a dropped link is surfaced with
+#      `::error title=Link dropped::<url>` instead of failing silently.
+#   5. Clear messages instead of a bare traceback for every exit path.
 
 on:
   repository_dispatch:
@@ -64,20 +71,32 @@ jobs:
 
           if attempt >= MAX_BOUNCE:
               print(f"! Already bounced {attempt} times - giving up on this link")
+              print(f"::error title=Link dropped::{link}")
               sys.exit(1)
 
           users = [str(w.get("user", "")) for w in pool]
           try:
               idx = [u.lower() for u in users].index(str(failed).lower())
           except ValueError:
-              print(f"! {failed} is not in the pool {users} - cannot reassign")
+              print(f"! {failed} is not in the pool {users} - rotating from the first worker")
+              idx = -1
+
+          # Ring rotation. Previously a failure on the LAST pool member printed
+          # "exhausted" and dropped the link even when the other workers had
+          # never tried it (that is what killed Wde93.part2.rar). Wrapping to
+          # pool[0] fixes it, and the fallback_attempt cap still stops the loop
+          # once every worker has had one turn.
+          if len(pool) < 2:
+              print("! the pool has a single worker - there is nobody to rotate to")
+              print(f"::error title=Link dropped::{link}")
               sys.exit(1)
 
-          if idx + 1 >= len(pool):
-              print(f"! {failed} was the last worker in the pool - exhausted")
+          if attempt >= len(pool):
+              print(f"! already bounced {attempt} time(s) - every worker failed this link, giving up")
+              print(f"::error title=Link dropped::{link}")
               sys.exit(1)
 
-          nxt = pool[idx + 1]
+          nxt = pool[(idx + 1) % len(pool)]
           nxt_user = nxt["user"]
           print(f"Reassigning to new worker: {nxt_user}")
 
