@@ -1,71 +1,161 @@
 name: Master Orchestrator
 
+# Listens for a failing child, then hands the SAME link to the next worker
+# in the pool.
+#
+# Fixed vs the old version:
+#   1. `master_token` passed to the next child is looked up by USER NAME
+#      (the pool entry that owns MASTER_OWNER), not `pool[0]`. pool[0] is a
+#      random worker after rotation, and only the Master owner's PAT can
+#      dispatch into the Master repo (everything else gets 404).
+#   2. Optional repo secret MASTER_PAT is used as a backup if the pool has no
+#      entry for MASTER_OWNER.
+#   3. fallback_attempt is incremented and capped, so a dead link cannot bounce
+#      around the pool forever.
+#   4. Clear messages instead of a bare traceback when the pool is exhausted.
+
 on:
   repository_dispatch:
     types: [child_failed]
 
+permissions:
+  contents: read
+
 jobs:
   reassign_worker:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Process Failure and Reassign
         env:
           PAYLOAD_JSON: ${{ toJson(github.event.client_payload) }}
           MASTER_OWNER: ${{ github.repository_owner }}
           MASTER_REPO: ${{ github.event.repository.name }}
+          # Optional: create this secret if you want a token that does not
+          # depend on the pool. Safe to leave unset.
+          MASTER_PAT: ${{ secrets.MASTER_PAT }}
         run: |
-          python -c "
-          import os, json, requests
+          python3 - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
 
-          payload_str = os.environ.get('PAYLOAD_JSON', '{}')
-          payload = json.loads(payload_str)
+          MAX_BOUNCE = 6
 
-          pool = json.loads(payload.get('worker_pool', '[]'))
-          failed_worker = payload.get('failed_worker')
-          link = payload.get('failed_link')
+          payload = json.loads(os.environ.get("PAYLOAD_JSON") or "{}")
+          owner = os.environ["MASTER_OWNER"]
+          repo = os.environ["MASTER_REPO"]
+          secret_pat = os.environ.get("MASTER_PAT") or ""
 
-          print(f'🚨 Received failure report from: {failed_worker}')
-          print(f'🔗 Link to retry: {link}')
-
-          # Find who failed, and pick the next one in the list
           try:
-              current_idx = next(i for i, w in enumerate(pool) if w['user'] == failed_worker)
-              next_worker = pool[current_idx + 1]
-          except StopIteration:
-              print('❌ Failed worker not in pool list. Cannot reassign.')
-              exit(1)
-          except IndexError:
-              print('❌ Out of backup workers. The entire pool has been exhausted.')
-              exit(1)
+              pool = json.loads(payload.get("worker_pool") or "[]")
+          except ValueError:
+              print("! worker_pool is not valid JSON")
+              sys.exit(1)
+          if not isinstance(pool, list) or not pool:
+              print("! worker_pool is empty - nothing to reassign to")
+              sys.exit(1)
 
-          print(f'🚀 Reassigning to new worker: {next_worker[\"user\"]}')
+          failed = payload.get("failed_worker")
+          link = payload.get("failed_link")
+          attempt = int(payload.get("fallback_attempt") or 0)
 
-          url = f'https://api.github.com/repos/{next_worker[\"user\"]}/{os.environ[\"MASTER_REPO\"]}/actions/workflows/workflow.yml/dispatches'
-          dispatch_payload = {
-              'ref': 'main',
-              'inputs': {
-                  'source_type': 'rapidgator',
-                  'rg_links': link,
-                  'worker_pool': payload.get('worker_pool'),
-                  'master_owner': os.environ['MASTER_OWNER'],
-                  'master_repo': os.environ['MASTER_REPO'],
-                  'master_token': pool[0]['token'], # Since it's the master doing this, we can pull token directly from pool
-                  'rg_email': payload.get('rg_email'),
-                  'rg_password': payload.get('rg_password'),
-                  'hf_token': payload.get('hf_token'),
-                  'repo_id': payload.get('repo_id'),
-                  'repo_type': payload.get('repo_type')
-              }
+          print(f"Received failure report from: {failed}")
+          print(f"Link to retry: {link}")
+          print(f"fallback_attempt so far: {attempt}")
+
+          if attempt >= MAX_BOUNCE:
+              print(f"! Already bounced {attempt} times - giving up on this link")
+              sys.exit(1)
+
+          users = [str(w.get("user", "")) for w in pool]
+          try:
+              idx = [u.lower() for u in users].index(str(failed).lower())
+          except ValueError:
+              print(f"! {failed} is not in the pool {users} - cannot reassign")
+              sys.exit(1)
+
+          if idx + 1 >= len(pool):
+              print(f"! {failed} was the last worker in the pool - exhausted")
+              sys.exit(1)
+
+          nxt = pool[idx + 1]
+          nxt_user = nxt["user"]
+          print(f"Reassigning to new worker: {nxt_user}")
+
+          # Which token may dispatch into THIS Master repo? Ask GitHub instead of
+          # matching names: probe each pool token for push access. Moving the
+          # Master to another account therefore needs no code change - just make
+          # sure that account's PAT is in the pool (or in MASTER_PAT).
+          def can_push(o, r, token):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{o}/{r}",
+                  headers={"Authorization": f"Bearer {token}",
+                           "Accept": "application/vnd.github+json",
+                           "User-Agent": "master-probe"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r_:
+                      return bool((json.load(r_).get("permissions") or {}).get("push"))
+              except Exception:
+                  return False
+
+          candidates = []
+          for w in pool:
+              t = w.get("token")
+              if t and t not in candidates:
+                  candidates.append(t)
+          if secret_pat and secret_pat not in candidates:
+              candidates.append(secret_pat)
+
+          master_tok = ""
+          for t in candidates:
+              if can_push(owner, repo, t):
+                  master_tok = t
+                  break
+
+          if not master_tok:
+              print(f"! none of the {len(candidates)} token(s) can write to "
+                    f"{owner}/{repo}; the next child will fall back to its own repo")
+
+          url = (f"https://api.github.com/repos/{nxt_user}/{repo}"
+                 f"/actions/workflows/workflow.yml/dispatches")
+          body = {
+              "ref": "main",
+              "inputs": {
+                  "source_type": "rapidgator",
+                  "rg_links": link,
+                  "worker_pool": payload.get("worker_pool"),
+                  "master_owner": owner,
+                  "master_repo": repo,
+                  "master_token": master_tok,
+                  "rg_email": payload.get("rg_email"),
+                  "rg_password": payload.get("rg_password"),
+                  "hf_token": payload.get("hf_token"),
+                  "repo_id": payload.get("repo_id"),
+                  "repo_type": payload.get("repo_type"),
+                  "fallback_attempt": str(attempt + 1),
+              },
           }
 
-          res = requests.post(
-              url, json=dispatch_payload, 
-              headers={'Authorization': f'Bearer {next_worker[\"token\"]}', 'Accept': 'application/vnd.github.v3+json'}
-          )
+          req = urllib.request.Request(
+              url, data=json.dumps(body).encode(), method="POST",
+              headers={"Authorization": f"Bearer {nxt['token']}",
+                       "Accept": "application/vnd.github+json",
+                       "Content-Type": "application/json",
+                       "X-GitHub-Api-Version": "2022-11-28",
+                       "User-Agent": "master-orchestrator"})
+          try:
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  print(f"Dispatch HTTP {r.status}")
+                  if r.status != 204:
+                      sys.exit(1)
+          except urllib.error.HTTPError as e:
+              print(f"! Dispatch failed: HTTP {e.code} {e.read().decode()[:200]}")
+              if e.code == 404:
+                  print(f"  404 = {nxt_user}'s token cannot write to "
+                        f"{nxt_user}/{repo} (repo missing, or token scoped out)")
+              sys.exit(1)
+          except Exception as e:
+              print(f"! Dispatch error: {type(e).__name__}: {e}")
+              sys.exit(1)
 
-          if res.status_code == 204:
-              print('✅ Successfully dispatched to new worker.')
-          else:
-              print(f'❌ Dispatch failed: {res.text}')
-              exit(1)
-          "
+          print("Successfully dispatched to new worker.")
+          PY
