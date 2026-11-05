@@ -1,4 +1,4 @@
-name: Rapidgator to HF Batch
+name: Rapidgator to HF Batch - OLD
 
 # NOTE: every `github.event.inputs.*` below is what the frontend sends.
 # Nothing about the input names / sources was changed - only how they are used.
